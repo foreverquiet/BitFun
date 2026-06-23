@@ -547,9 +547,39 @@ pub async fn run() {
             }
 
             let app_handle = app.handle().clone();
+            let workspace_startup_bootstrap_snapshot = {
+                let app_state: tauri::State<'_, api::app_state::AppState> = app.state();
+                let startup_trace_state: tauri::State<'_, startup_trace::DesktopStartupTrace> =
+                    app.state();
+                tokio::task::block_in_place(|| {
+                    tokio::runtime::Handle::current().block_on(
+                        prepare_workspace_startup_bootstrap_snapshot(
+                            &app_state,
+                            &app_handle,
+                            &startup_trace_state,
+                        ),
+                    )
+                })
+                .and_then(|snapshot| {
+                    serde_json::to_value(snapshot)
+                        .map_err(|error| {
+                            log::warn!(
+                                "Failed to serialize workspace startup bootstrap snapshot, frontend will fall back to startup command: {}",
+                                error
+                            );
+                            error
+                        })
+                        .ok()
+                })
+            };
             let window_started = Instant::now();
             startup_trace.record_phase("main_window_create_start", "native_window");
-            theme::create_main_window(&app_handle, &startup_trace_id, &startup_trace);
+            theme::create_main_window(
+                &app_handle,
+                &startup_trace_id,
+                &startup_trace,
+                workspace_startup_bootstrap_snapshot,
+            );
             let window_duration_ms = elapsed_ms(window_started);
             startup_trace.record_step(
                 "native_step_end",
@@ -668,12 +698,8 @@ pub async fn run() {
             logging::spawn_log_cleanup_task();
             startup_trace.record_elapsed_step("native_setup", "spawn_log_cleanup_task", step_started);
 
-            // Set up system tray icon.
             let step_started = Instant::now();
-            if let Err(error) = crate::tray::setup_tray(app, &startup_trace) {
-                log::warn!("Failed to set up system tray: {}", error);
-            }
-            startup_trace.record_elapsed_step("native_setup", "setup_tray", step_started);
+            startup_trace.record_elapsed_step("native_setup", "setup_tray_deferred", step_started);
 
             let setup_duration_ms = elapsed_ms(setup_started);
             let since_process_start_ms = elapsed_ms(startup_started);
@@ -1113,10 +1139,12 @@ pub async fn run() {
             get_app_version,
             check_for_updates,
             install_update,
+            api::system_api::open_html_file_in_browser,
             restart_app,
             send_system_notification,
             api::system_api::quit_app,
             api::system_api::minimize_to_tray,
+            api::system_api::initialize_tray_after_startup,
             api::system_api::startup_window_control,
             api::system_api::toggle_main_window_fullscreen,
             check_command_exists,

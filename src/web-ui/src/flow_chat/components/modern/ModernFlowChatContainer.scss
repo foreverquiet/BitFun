@@ -9,7 +9,7 @@
 }
 
 .modern-flowchat-container {
-  --modern-flowchat-input-bg: #1e1e1e;
+  --modern-flowchat-input-bg: var(--color-bg-secondary);
 
   width: 100%;
   height: 100%;
@@ -36,6 +36,13 @@
     bottom: 0;
     overflow: hidden;
     background: transparent;
+  }
+
+  &__messages[data-history-state="ready"][data-is-partial="true"] {
+    .user-message-item,
+    .model-round-item {
+      animation: none;
+    }
   }
 
   &__input {

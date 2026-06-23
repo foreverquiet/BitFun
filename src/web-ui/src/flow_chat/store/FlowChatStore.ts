@@ -29,9 +29,10 @@ import {
 import { elapsedMs, nowMs } from '@/shared/utils/timing';
 import { i18nService } from '@/infrastructure/i18n/core/I18nService';
 import type { DialogTurnData, LocalCommandMetadata, SessionKind } from '@/shared/types/session-history';
-import type {
-  SessionInfo as AgentSessionInfo,
-  SessionViewRestoreTiming,
+import {
+  agentAPI,
+  type SessionInfo as AgentSessionInfo,
+  type SessionViewRestoreTiming,
 } from '@/infrastructure/api/service-api/AgentAPI';
 import type { SessionMetadataPage } from '@/infrastructure/api/service-api/SessionAPI';
 import {
@@ -60,6 +61,7 @@ import { sessionBelongsToWorkspaceNavRow } from '../utils/sessionOrdering';
 import { sessionMatchesWorkspace } from '../utils/workspaceScope';
 import { resolveThreadGoalUserMessageDisplay } from '../utils/threadGoalDisplay';
 import { useBackgroundSubagentActivityStore } from './backgroundSubagentActivityStore';
+import { recordHistorySessionDiagnosticEvent } from '../services/historySessionDiagnostics';
 
 const log = createLogger('FlowChatStore');
 const VALID_AGENT_TYPES = new Set([
@@ -74,10 +76,9 @@ const VALID_AGENT_TYPES = new Set([
 ]);
 const METADATA_LIST_RECENT_DEDUPE_TTL_MS = 1000;
 const HISTORICAL_SESSION_INITIAL_REMOTE_TAIL_TURN_COUNT = 3;
-const HISTORICAL_SESSION_INITIAL_LOCAL_TAIL_TURN_COUNT = 8;
+const HISTORICAL_SESSION_INITIAL_LOCAL_TAIL_TURN_COUNT = 3;
 const HISTORICAL_SESSION_FULL_HISTORY_IDLE_TIMEOUT_MS = 1500;
 const HISTORICAL_SESSION_FULL_HISTORY_FIRST_PAINT_TIMEOUT_MS = 2500;
-const HISTORICAL_SESSION_FULL_HISTORY_STABLE_VIEWPORT_DELAY_MS = 250;
 const MAX_DEFERRED_FULL_HISTORY_PROJECTIONS = 3;
 
 function itemMatchesIdentity(item: AnyFlowItem, itemId: string): boolean {
@@ -426,7 +427,6 @@ function scheduleLocalHistoricalSessionFullHydrate(
   let cancelled = false;
   let started = false;
   let cancelIdle: (() => void) | undefined;
-  let stableViewportTimer: ReturnType<typeof setTimeout> | undefined;
   const timeout = globalThis.setTimeout(
     () => start('timeout'),
     HISTORICAL_SESSION_FULL_HISTORY_FIRST_PAINT_TIMEOUT_MS,
@@ -439,10 +439,6 @@ function scheduleLocalHistoricalSessionFullHydrate(
 
     started = true;
     globalThis.clearTimeout(timeout);
-    if (stableViewportTimer) {
-      globalThis.clearTimeout(stableViewportTimer);
-      stableViewportTimer = undefined;
-    }
     cancelIdle = scheduleHistoricalSessionFullHydrate(() => callback(reason));
   }
 
@@ -450,9 +446,6 @@ function scheduleLocalHistoricalSessionFullHydrate(
     cancel: () => {
       cancelled = true;
       globalThis.clearTimeout(timeout);
-      if (stableViewportTimer) {
-        globalThis.clearTimeout(stableViewportTimer);
-      }
       cancelIdle?.();
     },
     releaseAfterInitialPaint: (options?: FullHistoryHydrationReleaseOptions) => {
@@ -460,14 +453,10 @@ function scheduleLocalHistoricalSessionFullHydrate(
         start('explicit');
         return;
       }
-      if (stableViewportTimer || started || cancelled) {
+      if (started || cancelled) {
         return;
       }
-      globalThis.clearTimeout(timeout);
-      stableViewportTimer = globalThis.setTimeout(
-        () => start('initial_paint'),
-        HISTORICAL_SESSION_FULL_HISTORY_STABLE_VIEWPORT_DELAY_MS,
-      );
+      start('initial_paint');
     },
   };
 }
@@ -3171,9 +3160,18 @@ export class FlowChatStore {
     workspacePath: string,
     remoteConnectionId?: string,
     remoteSshHost?: string,
+    modelConfigPromise?: Promise<{
+      models: any[];
+      defaultModels: Record<string, string>;
+    }>,
   ): Promise<void> {
-    const { stateMachineManager } = await import('../state-machine');
-    const { models, defaultModels } = await this.loadSessionMetadataModelConfig();
+    const [
+      { stateMachineManager },
+      { models, defaultModels },
+    ] = await Promise.all([
+      import('../state-machine'),
+      modelConfigPromise ?? this.loadSessionMetadataModelConfig(),
+    ]);
 
     const processSession = async (metadata: any) => {
       try {
@@ -3395,6 +3393,10 @@ export class FlowChatStore {
         durationMs: elapsedMs(importStartedAt),
       });
       let page: SessionMetadataPage;
+      let modelConfigPromise: Promise<{
+        models: any[];
+        defaultModels: Record<string, string>;
+      }> | undefined;
       const pageRequestStartedAt = nowMs();
       try {
         startupTrace.markPhase('session_metadata_page_request_start', {
@@ -3403,13 +3405,15 @@ export class FlowChatStore {
           metadataListTraceId,
           command: 'list_persisted_sessions_page',
         });
-        page = await sessionAPI.listSessionsPage({
+        const pagePromise = sessionAPI.listSessionsPage({
           workspacePath,
           limit,
           cursor,
           remoteConnectionId,
           remoteSshHost,
         });
+        modelConfigPromise = this.loadSessionMetadataModelConfig();
+        page = await pagePromise;
         startupTrace.markPhase('session_metadata_page_request_end', {
           remote,
           source: traceSource,
@@ -3460,6 +3464,7 @@ export class FlowChatStore {
         workspacePath,
         remoteConnectionId,
         remoteSshHost,
+        modelConfigPromise,
       );
       startupTrace.markPhase('session_metadata_page_end', {
         remote,
@@ -3729,12 +3734,26 @@ export class FlowChatStore {
       sessionId,
       sessionTraceId,
     });
-    this.setSessionHistoryState(sessionId, 'hydrating');
+    const initialSession = this.state.sessions.get(sessionId);
+    const suppressInitialHydratingState =
+      !remote &&
+      options?.deferFullHistoryUntilActive === true &&
+      this.state.activeSessionId === sessionId &&
+      initialSession?.isHistorical === true &&
+      initialSession.historyState === 'metadata-only';
+    let hydratingStateNotified = false;
+    const notifyHydratingState = (): void => {
+      if (suppressInitialHydratingState) {
+        return;
+      }
+      if (hydratingStateNotified) {
+        return;
+      }
+      hydratingStateNotified = true;
+      this.setSessionHistoryState(sessionId, 'hydrating');
+    };
 
     try {
-      const { stateMachineManager } = await import('../state-machine');
-      stateMachineManager.getOrCreate(sessionId);
-      
       const existingSession = this.state.sessions.get(sessionId);
       const isAcpSession = existingSession?.mode?.startsWith('acp:') ||
         existingSession?.config.agentType?.startsWith('acp:');
@@ -3745,6 +3764,7 @@ export class FlowChatStore {
       let restoredLoadedTurnCount: number | undefined;
       let restoredTotalTurnCount: number | undefined;
       let restoredTiming: SessionViewRestoreTiming | undefined;
+      const stateMachineManagerPromise = import('../state-machine');
       if (!isAcpSession) {
         const restoreStartedAt = nowMs();
         startupTrace.markPhase('historical_session_restore_start', {
@@ -3753,7 +3773,6 @@ export class FlowChatStore {
           sessionTraceId,
         });
         try {
-          const { agentAPI } = await import('@/infrastructure/api/service-api/AgentAPI');
           const restoreSessionViewSupportKey = restoreCommandSupportKey(
             'restore_session_view',
             remoteConnectionId,
@@ -3770,7 +3789,7 @@ export class FlowChatStore {
               !this.unsupportedRestoreCommands.has(restoreSessionWithTurnsSupportKey)
             ) {
               try {
-                const restored = await agentAPI.restoreSessionWithTurns(
+                const restoredPromise = agentAPI.restoreSessionWithTurns(
                   sessionId,
                   workspacePath,
                   remoteConnectionId,
@@ -3778,6 +3797,8 @@ export class FlowChatStore {
                   sessionTraceId,
                   options?.includeInternal,
                 );
+                notifyHydratingState();
+                const restored = await restoredPromise;
                 restoredSessionInfo = restored.session;
                 turns = restored.turns;
                 contextRestoreState = 'ready';
@@ -3798,7 +3819,7 @@ export class FlowChatStore {
               }
             }
 
-            restoredSessionInfo = await agentAPI.restoreSession(
+            const restoredSessionPromise = agentAPI.restoreSession(
               sessionId,
               workspacePath,
               remoteConnectionId,
@@ -3806,6 +3827,8 @@ export class FlowChatStore {
               sessionTraceId,
               options?.includeInternal,
             );
+            notifyHydratingState();
+            restoredSessionInfo = await restoredSessionPromise;
             contextRestoreState = 'ready';
           };
 
@@ -3814,7 +3837,7 @@ export class FlowChatStore {
             !this.unsupportedRestoreCommands.has(restoreSessionViewSupportKey)
           ) {
             try {
-              const restored = await agentAPI.restoreSessionView(
+              const restoredPromise = agentAPI.restoreSessionView(
                 sessionId,
                 workspacePath,
                 remoteConnectionId,
@@ -3823,6 +3846,8 @@ export class FlowChatStore {
                 options?.includeInternal,
                 historicalSessionInitialTailTurnCount(remote),
               );
+              notifyHydratingState();
+              const restored = await restoredPromise;
               restoredSessionInfo = restored.session;
               turns = restored.turns;
               contextRestoreState =
@@ -3874,6 +3899,7 @@ export class FlowChatStore {
       }
       
       if (!turns) {
+        notifyHydratingState();
         const turnsLoadStartedAt = nowMs();
         startupTrace.markPhase('historical_session_turns_load_start', {
           remote,
@@ -3896,12 +3922,65 @@ export class FlowChatStore {
           durationMs: elapsedMs(turnsLoadStartedAt),
         });
       }
+      const { stateMachineManager } = await stateMachineManagerPromise;
+      stateMachineManager.getOrCreate(sessionId);
       startupTrace.markPhase('historical_session_turns_loaded', {
         remote,
         sessionId,
         sessionTraceId,
         turnCount: Array.isArray(turns) ? turns.length : 0,
       });
+
+      const skipStaleLocalHydrateCommit =
+        !remote &&
+        options?.deferFullHistoryUntilActive === true &&
+        this.state.activeSessionId !== sessionId;
+      if (skipStaleLocalHydrateCommit) {
+        this.setState(prev => {
+          const session = prev.sessions.get(sessionId);
+          if (!session || prev.activeSessionId === sessionId) {
+            return prev;
+          }
+
+          const newSessions = new Map(prev.sessions);
+          newSessions.set(sessionId, {
+            ...session,
+            historyState: session.isHistorical ? 'metadata-only' : session.historyState,
+          });
+
+          return {
+            ...prev,
+            sessions: newSessions,
+          };
+        });
+        stateMachineManager.reset(sessionId);
+        startupTrace.markPhase('historical_session_hydrate_stale_commit_skipped', {
+          remote,
+          sessionId,
+          sessionTraceId,
+          loadedTurnCount: restoredLoadedTurnCount,
+          totalTurnCount: restoredTotalTurnCount,
+          isPartial: restoredHistoryPartial,
+          durationMs: elapsedMs(traceStartedAt),
+        });
+        recordHistorySessionDiagnosticEvent(sessionId, 'store_stale_commit_skipped', {
+          remote,
+          loadedTurnCount: restoredLoadedTurnCount,
+          totalTurnCount: restoredTotalTurnCount,
+          isPartial: restoredHistoryPartial,
+        });
+        startupTrace.markPhase('historical_session_hydrate_end', {
+          remote,
+          sessionId,
+          sessionTraceId,
+          skipped: true,
+          loadedTurnCount: restoredLoadedTurnCount,
+          totalTurnCount: restoredTotalTurnCount,
+          isPartial: restoredHistoryPartial,
+          durationMs: elapsedMs(traceStartedAt),
+        });
+        return;
+      }
       
       const convertStartedAt = nowMs();
       const dialogTurns = this.convertToDialogTurns(turns);
@@ -3952,6 +4031,12 @@ export class FlowChatStore {
         totalTurnCount: restoredTotalTurnCount,
         isPartial: restoredHistoryPartial,
         durationMs: elapsedMs(stateCommitStartedAt),
+      });
+      recordHistorySessionDiagnosticEvent(sessionId, 'store_state_commit_finished', {
+        remote,
+        dialogTurnCount: dialogTurns.length,
+        totalTurnCount: restoredTotalTurnCount,
+        isPartial: restoredHistoryPartial,
       });
       markPhaseAfterAnimationFrames(startupTrace, 'historical_session_after_state_commit_frame', {
         remote,
@@ -4026,6 +4111,9 @@ export class FlowChatStore {
         sessionId,
         sessionTraceId,
         durationMs: elapsedMs(traceStartedAt),
+      });
+      recordHistorySessionDiagnosticEvent(sessionId, 'store_hydrate_failed', {
+        remote,
       });
       log.error('Failed to load session history', { sessionId, error });
       throw error;

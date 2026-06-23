@@ -2969,6 +2969,45 @@ export const requiredContentRules = [
     ],
   },
   {
+    path: 'src/crates/execution/tool-execution/src/context.rs',
+    reason:
+      'tool-runtime must own provider-neutral tool custom-data materialization and context facts projection while core keeps runtime handles and concrete ToolUseContext',
+    patterns: [
+      {
+        regex: /\bpub struct ToolRuntimeCustomDataInput\b/,
+        message: 'missing tool runtime custom-data input DTO',
+      },
+      {
+        regex: /\bpub fn build_tool_runtime_custom_data\b/,
+        message: 'missing tool runtime custom-data owner',
+      },
+      {
+        regex: /\bpub struct ToolRuntimeContextFactsInput\b/,
+        message: 'missing tool runtime context facts input DTO',
+      },
+      {
+        regex: /\bpub fn project_tool_context_facts\b/,
+        message: 'missing tool runtime context facts projection owner',
+      },
+      {
+        regex: /\bpub fn delegation_policy_from_custom_data\b/,
+        message: 'missing delegation policy parsing owner',
+      },
+      {
+        regex: /\bpub fn primary_model_supports_image_understanding\b/,
+        message: 'missing model image-support policy owner',
+      },
+      {
+        regex: /\bmaterializes_provider_neutral_tool_custom_data\b/,
+        message: 'missing tool runtime custom-data regression',
+      },
+      {
+        regex: /\bprojects_prompt_safe_tool_context_facts_only\b/,
+        message: 'missing prompt-safe context facts regression',
+      },
+    ],
+  },
+  {
     path: 'src/crates/execution/tool-execution/tests/tool_pipeline_planning.rs',
     reason:
       'tool-runtime pipeline owner must keep behavior-equivalence contracts for batching and retry policy',
@@ -3296,6 +3335,76 @@ export const requiredContentRules = [
       {
         regex: /\bbackground_command_output_reads_snapshot_then_incremental_chunks\b/,
         message: 'missing background command output snapshot/incremental regression',
+      },
+    ],
+  },
+  {
+    path: 'src/crates/execution/tool-execution/src/exec_command.rs',
+    reason:
+      'tool-runtime must own provider-neutral ExecCommand presentation, control facts, completion shape, and session-not-found result builders while core keeps concrete process managers',
+    patterns: [
+      {
+        regex: /\bpub enum ExecCommandControlAction\b/,
+        message: 'missing provider-neutral exec control action contract',
+      },
+      {
+        regex: /\bpub struct ExecCommandControlRequest\b/,
+        message: 'missing provider-neutral exec control request contract',
+      },
+      {
+        regex: /\bpub fn render_exec_command_response_for_assistant\b/,
+        message: 'missing ExecCommand assistant response owner',
+      },
+      {
+        regex: /\bpub fn render_write_stdin_response_for_assistant\b/,
+        message: 'missing WriteStdin assistant response owner',
+      },
+      {
+        regex: /\bpub fn exec_control_session_not_found_result\b/,
+        message: 'missing ExecControl session-not-found result owner',
+      },
+      {
+        regex: /\bpub fn exec_command_background_output_status\b/,
+        message: 'missing ExecCommand background-output status owner',
+      },
+      {
+        regex: /\bcompletion_value_uses_stable_snake_case_shape\b/,
+        message: 'missing ExecCommand completion shape regression',
+      },
+      {
+        regex: /\bbackground_output_status_maps_terminal_completion_without_core_types\b/,
+        message: 'missing ExecCommand background status regression',
+      },
+    ],
+  },
+  {
+    path: 'src/crates/execution/tool-execution/src/computer_use.rs',
+    reason:
+      'tool-runtime must own provider-neutral Computer Use loop detection, screenshot hashing, verification, and retry policy while core keeps host adapters',
+    patterns: [
+      {
+        regex: /\bpub struct ComputerUseOptimizer\b/,
+        message: 'missing Computer Use optimizer owner',
+      },
+      {
+        regex: /\bpub fn hash_screenshot_bytes\b/,
+        message: 'missing Computer Use screenshot hash owner',
+      },
+      {
+        regex: /\bpub struct VerificationResult\b/,
+        message: 'missing Computer Use verification result contract',
+      },
+      {
+        regex: /\bpub fn should_retry_action_message\b/,
+        message: 'missing provider-neutral Computer Use retry decision owner',
+      },
+      {
+        regex: /\bdetects_repeated_action_loop\b/,
+        message: 'missing Computer Use loop detection regression',
+      },
+      {
+        regex: /\bretry_decision_uses_error_text_without_core_error_type\b/,
+        message: 'missing Computer Use retry decision regression',
       },
     ],
   },
@@ -5894,6 +6003,18 @@ export const requiredContentRules = [
       {
         regex: /\bto_tool_context_facts\b/,
         message: 'missing portable ToolUseContext facts projection',
+      },
+      {
+        regex: /\bproject_tool_context_facts\b/,
+        message: 'missing tool-runtime context facts owner delegation',
+      },
+      {
+        regex: /\bbuild_tool_runtime_custom_data\b/,
+        message: 'missing tool-runtime custom-data owner delegation',
+      },
+      {
+        regex: /\bdelegation_policy_from_custom_data\b/,
+        message: 'missing tool-runtime delegation policy owner delegation',
       },
       {
         regex: /\bimpl PortableToolContextProvider for ToolUseContext\b/,

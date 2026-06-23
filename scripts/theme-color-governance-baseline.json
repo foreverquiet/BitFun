@@ -3,22 +3,67 @@
   "description": "Baseline for Web UI theme color governance. Lower values when debt is removed; do not raise without a documented review reason.",
   "budgets": {
     "fallbackOccurrences": {
-      "max": 31
+      "max": 25
     },
     "fallbackUniqueTokens": {
-      "max": 10
+      "max": 7
+    },
+    "fallbackContracts.uncontractedUnique": {
+      "max": 0
+    },
+    "fallbackContracts.staleRegisteredUnique": {
+      "max": 0
+    },
+    "compatibilityAliases.registeredUnique": {
+      "max": 63
+    },
+    "compatibilityAliases.usedUnique": {
+      "max": 68
+    },
+    "compatibilityAliases.occurrences": {
+      "max": 608
+    },
+    "compatibilityAliases.staleRegisteredUnique": {
+      "max": 0
+    },
+    "compatibilityAliases.familyRegisteredUnique": {
+      "max": 2
+    },
+    "compatibilityAliases.familyUsedUnique": {
+      "max": 2
+    },
+    "compatibilityAliases.familyOccurrences": {
+      "max": 51
+    },
+    "compatibilityAliases.staleRegisteredFamilyUnique": {
+      "max": 0
+    },
+    "compatibilityAliases.missingCanonicalUnique": {
+      "max": 0
+    },
+    "colorDomainContracts.registeredUnique": {
+      "max": 13
+    },
+    "colorDomainContracts.missingRegisteredUnique": {
+      "max": 0
+    },
+    "colorDomainContracts.staleRegisteredUnique": {
+      "max": 0
+    },
+    "colorDomainContracts.activeUncontractedUnique": {
+      "max": 0
     },
     "colorScopes.appUi.uniqueColors": {
-      "max": 233
+      "max": 0
     },
     "colorScopes.appUi.occurrences": {
-      "max": 273
+      "max": 0
     },
     "colorScopes.token.uniqueColors": {
       "max": 697
     },
     "colorScopes.exception.uniqueColors": {
-      "max": 212
+      "max": 274
     },
     "cssVarDefinitions.unresolvedRequiredUnique": {
       "max": 0
@@ -45,16 +90,16 @@
       "max": 0
     },
     "tokenAliasLiterals.occurrences": {
-      "max": 13
+      "max": 0
     },
     "tokenAliasLiterals.uniqueColors": {
-      "max": 11
+      "max": 0
     },
     "nearPairs.indistinguishableTotal": {
       "max": 0
     },
     "nearPairs.nearTotal": {
-      "max": 35
+      "max": 0
     },
     "colorDomainScopes.themePreset.occurrences": {
       "max": 1033
@@ -75,13 +120,13 @@
       "max": 0
     },
     "colorDomainScopes.boundaryFallback.occurrences": {
-      "max": 21
+      "max": 22
     },
     "colorDomainScopes.boundaryFallback.uniqueColors": {
-      "max": 21
+      "max": 22
     },
     "colorDomainScopes.editor.occurrences": {
-      "max": 151
+      "max": 56
     },
     "colorDomainScopes.syntax.occurrences": {
       "max": 18
@@ -93,25 +138,25 @@
       "max": 0
     },
     "colorDomainScopes.uiException.occurrences": {
-      "max": 21
+      "max": 38
     },
     "colorDomainScopes.uiException.uniqueColors": {
-      "max": 19
+      "max": 34
     },
     "colorDomainScopes.languageIdentity.occurrences": {
-      "max": 57
+      "max": 52
     },
     "colorDomainScopes.languageIdentity.uniqueColors": {
       "max": 50
     },
     "colorDomainScopes.visualEffect.occurrences": {
-      "max": 22
+      "max": 0
     },
     "colorDomainScopes.appUi.occurrences": {
-      "max": 108
+      "max": 0
     },
     "colorDomainScopes.appUi.uniqueColors": {
-      "max": 94
+      "max": 0
     },
     "colorDomainScopes.mermaid.occurrences": {
       "max": 139
@@ -119,59 +164,5 @@
     "colorDomainScopes.mermaid.uniqueColors": {
       "max": 95
     }
-  },
-  "allowlists": {
-    "intentionalFallbackTokens": [
-      {
-        "key": "--surface-stagger-index",
-        "owner": "src/web-ui/src/app/components/GalleryLayout; app scene cards",
-        "reason": "runtime inline animation index with zero fallback for first-paint and non-animated states"
-      },
-      {
-        "key": "--mission-control-group-color",
-        "owner": "src/web-ui/src/app/components/panels/content-canvas/mission-control",
-        "reason": "runtime group identity color with accent fallback when no group color is assigned"
-      },
-      {
-        "key": "--char-index",
-        "owner": "src/web-ui/src/component-library/components/StreamText",
-        "reason": "runtime per-character animation offset with zero fallback outside animated rendering"
-      },
-      {
-        "key": "--shadow-color",
-        "owner": "agent surface cards and Markdown Mermaid block",
-        "reason": "surface-local shadow tint override with governed default shadow fallbacks"
-      },
-      {
-        "key": "--assistant-card-gradient",
-        "owner": "src/web-ui/src/app/scenes/profile/views/NurseryView.scss",
-        "reason": "runtime assistant identity gradient with static visual fallback for unloaded card metadata"
-      },
-      {
-        "key": "--gallery-grid-min",
-        "owner": "src/web-ui/src/app/components/GalleryLayout",
-        "reason": "runtime layout sizing input with stable grid fallback"
-      },
-      {
-        "key": "--gallery-skeleton-height",
-        "owner": "src/web-ui/src/app/components/GalleryLayout",
-        "reason": "runtime skeleton sizing input with stable placeholder fallback"
-      },
-      {
-        "key": "--operation-color",
-        "owner": "src/web-ui/src/component-library/components/FlowChatCards/SnapshotCard",
-        "reason": "runtime snapshot operation identity color with accent fallback"
-      },
-      {
-        "key": "--primary-color",
-        "owner": "src/web-ui/src/component-library/components/Markdown",
-        "reason": "embedded markdown primary accent override with global accent fallback"
-      },
-      {
-        "key": "--scene-viewport-border-width",
-        "owner": "src/web-ui/src/app/scenes/SceneViewport.scss",
-        "reason": "runtime viewport layout override with stable one-pixel default"
-      }
-    ]
   }
 }
